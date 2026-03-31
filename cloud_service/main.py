@@ -1,8 +1,12 @@
+import multiprocessing
+import socket
 import time
 from fastapi import FastAPI, HTTPException
 from typing import Dict
 
-from .models import RegisterResponse, HeartbeatResponse
+from cloud_service.player import run_player
+
+from .models import MeshConfig, RegisterResponse, HeartbeatResponse
 from .robotSession import RobotSession
 
 app = FastAPI(title="Cloud Service Orchestrator")
@@ -16,6 +20,7 @@ def register_robot(robot_id: str):
     registry[robot_id] = RobotSession()
     print(f"[Cloud] Robot '{robot_id}' registered.")
     return RegisterResponse(robot_id=robot_id, message="Registration successful")
+
 
 @app.post("/robot/{robot_id}/heartbeat", response_model=HeartbeatResponse)
 def robot_heartbeat(robot_id: str):
@@ -33,6 +38,7 @@ def robot_heartbeat(robot_id: str):
     config = registry[robot_id].mesh_config
     return HeartbeatResponse(status="alive", mesh_config=config)
 
+
 @app.get("/robots")
 def list_robots():
     """Called by the User to see available robots."""
@@ -44,9 +50,49 @@ def list_robots():
     ]
     return {"active_robots": active_robots}
 
+
+def get_free_port() -> int:
+    """Helper method to dynamically find an available port"""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(('', 0))
+        return s.getsockname()[1]
+
+
 @app.post("/connect/{robot_id}")
 def connect_user_to_robot(robot_id: str):
     """
     Called by the User. Orchestrates the creation of the P2P mesh.
     """
-    pass
+    if robot_id not in registry:
+        raise HTTPException(status_code=404, detail="Robot not found or offline")
+        
+    session = registry[robot_id]
+        
+    if session.player_process and session.player_process.is_alive():
+        return {"message": "Already connected", "mesh_config": session.mesh_config}
+
+    # 1. Allocate ports
+    config = MeshConfig(
+        robot_pub_port=get_free_port(),
+        player_pub_port=get_free_port(),
+        user_pub_port=get_free_port()
+    )
+    session.mesh_config = config
+    
+    # 2. Spawn the Cloud Player as a new process
+    player_process = multiprocessing.Process(
+        target=run_player,
+        args=(
+            robot_id, 
+            config.player_pub_port, 
+            config.robot_pub_port, 
+            config.user_pub_port
+        ),
+        daemon=True # background process
+    )
+    player_process.start()
+    session.player_process = player_process
+    
+    print(f"[Cloud] Orchestrated mesh for '{robot_id}'. Player PID: {player_process.pid}")
+    
+    return {"message": "Mesh provisioned successfully", "mesh_config": config}
