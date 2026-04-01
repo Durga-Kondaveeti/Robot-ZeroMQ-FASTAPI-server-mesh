@@ -76,6 +76,11 @@ class UserMeshNode:
             except Exception as e:
                 print(f"[User Network Error] {e}")
 
+    def send_disconnect(self):
+        """Signals the mesh to tear down."""
+        self.send_command("disconnect")
+        self.running = False
+
     def send_command(self, command: str):
         """Publishes a JSON command to the Robot over the mesh."""
         topic = f"robot/{self.robot_id}/command".encode('utf-8')

@@ -70,11 +70,12 @@ def main():
     # 4. Interactive Command Loop
     print("\n--- Mesh Established ---")
     print("Commands: forward, stop, left, right, exit")
-    
+
     while True:
         cmd = input("Command: ").strip().lower()
         if cmd == 'exit':
-            print("Shutting down...")
+            mesh.send_disconnect()
+            print("Shutting down user...")
             break
         elif cmd in ['forward', 'stop', 'left', 'right']:
             mesh.send_command(cmd)
