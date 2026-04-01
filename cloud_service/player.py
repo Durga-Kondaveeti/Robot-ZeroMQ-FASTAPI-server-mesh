@@ -1,3 +1,6 @@
+import csv
+import os
+
 import zmq
 import json
 import time
@@ -32,6 +35,16 @@ def run_player(robot_id: str, player_port: int, robot_port: int, user_port: int)
     print(f"[Cloud Player {robot_id}] Publishing on port {player_port}")
     print(f"[Cloud Player {robot_id}] Subscribed to ports {robot_port} (Robot) and {user_port} (User)\n")
 
+    log_dir = os.path.join("logs", "player_logs", f"{robot_id}-player-1")
+    os.makedirs(log_dir, exist_ok=True)
+    log_file = os.path.join(log_dir, "robot_input.csv")
+
+    # Write CSV header if file is new
+    if not os.path.isfile(log_file):
+        with open(log_file, 'w', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow(["time", "log"])
+
     while True:
         try:
             topic_bytes, message_bytes = sub_socket.recv_multipart()
@@ -46,6 +59,11 @@ def run_player(robot_id: str, player_port: int, robot_port: int, user_port: int)
 
             # If we receive raw sensor data, process it and republish
             elif topic == sensor_topic:
+                # --- Save logs to disk ---
+                with open(log_file, 'a', newline='') as f:
+                    writer = csv.writer(f)
+                    writer.writerow([time.time(), json.dumps(data)])
+
                 processed_data = data.copy()
                 processed_data["status"] = "normal"
 
@@ -64,7 +82,6 @@ def run_player(robot_id: str, player_port: int, robot_port: int, user_port: int)
     context.term()
     print(f"[Cloud Player {robot_id}] Teardown complete. Process exiting.")
 
-# ... (Keep all your existing run_player code above)
 
 if __name__ == "__main__":
     import sys

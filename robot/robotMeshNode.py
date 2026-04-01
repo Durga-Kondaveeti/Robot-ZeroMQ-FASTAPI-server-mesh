@@ -1,3 +1,6 @@
+import csv
+import os
+
 import zmq
 import json
 import threading
@@ -56,6 +59,18 @@ class RobotMeshNode:
 
     def _listen_loop(self):
         """Listens for incoming commands and status updates."""
+
+        # --- Create Custom Directory Structure ---
+        log_dir = os.path.join("logs", "robot_logs", self.robot_id)
+        os.makedirs(log_dir, exist_ok=True)
+        log_file = os.path.join(log_dir, "user_commands.csv")
+
+        # Write CSV header if file is new
+        if not os.path.isfile(log_file):
+            with open(log_file, 'w', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow(["time", "log"])
+
         while self.running:
             try:
                 topic_bytes, msg_bytes = self.sub_socket.recv_multipart()
@@ -67,6 +82,12 @@ class RobotMeshNode:
                 # Command routing logic
                 if topic.endswith("/command"):
                     cmd = data.get("command")
+
+                    # --- Save logs to disk ---
+                    with open(log_file, 'a', newline='') as f:
+                        writer = csv.writer(f)
+                        writer.writerow([time.time(), json.dumps(data)])
+
                     if cmd == "forward":
                         self.robot_hardware.forward()
                     elif cmd == "stop":
@@ -81,6 +102,7 @@ class RobotMeshNode:
             except Exception as e:
                 print(f"[Robot Network Error] Listen loop failed: {e}")
 
+
     def _publish_loop(self):
         """Publishes raw sensor data every second."""
         sensor_topic = f"robot/{self.robot_id}/sensor".encode('utf-8')
@@ -89,7 +111,6 @@ class RobotMeshNode:
             try:
                 sensor_data = self.robot_hardware.read_sensor()
 
-                # ADD THIS: Simple timestamp for latency tracking
                 sensor_data["timestamp"] = time.time()
 
                 self.pub_socket.send_multipart([
