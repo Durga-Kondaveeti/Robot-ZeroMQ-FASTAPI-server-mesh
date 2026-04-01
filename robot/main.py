@@ -1,3 +1,4 @@
+import random
 import time
 import requests
 import sys
@@ -25,7 +26,13 @@ def main(robot_id: str):
             
         time.sleep(1) # Wait 1 second before next heartbeat
 
+
+def generate_robot_id() -> str:
+    timestamp = int(time.time() * 1_000_000)  # microseconds
+    suffix = random.randint(1000, 9999)
+    return f"robot-{timestamp}-{suffix}"
+
+
 if __name__ == "__main__":
-    # Allow passing a custom robot ID via command line args, default to "robby-1"
-    target_id = sys.argv[1] if len(sys.argv) > 1 else "robby-1"
-    main(target_id)
+    robot_id = generate_robot_id()
+    main(robot_id)
