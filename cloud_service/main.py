@@ -36,6 +36,7 @@ def robot_heartbeat(robot_id: str):
 
     # Return the config if a user has requested a connection
     config = registry[robot_id].mesh_config
+    print("LOG CHCEK", robot_id, registry[robot_id].mesh_config)
     return HeartbeatResponse(status="alive", mesh_config=config)
 
 

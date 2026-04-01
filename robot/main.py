@@ -19,6 +19,7 @@ def main(robot_id: str):
         sys.exit(1)
 
     mesh_node = None
+    current_config = None
 
     # 2. Main Event Loop (Heartbeats)
     while True:
@@ -29,9 +30,16 @@ def main(robot_id: str):
             # Check if a user has connected and triggered the mesh setup
             config = data.get("mesh_config")
 
+            # If a mesh node exists, but its threads have shut down (self.running == False)
+            if mesh_node and not mesh_node.running:
+                print(f"\n[Robot Orchestrator] Mesh closed. Returning to idle heartbeat mode.")
+                mesh_node = None
+                current_config = None
+
             # If we received a config and haven't spun up our ZMQ node yet
-            if config and mesh_node is None:
+            if config and config != current_config and mesh_node is None:
                 print(f"\n[Robot Orchestrator] Received mesh configuration. Spawning P2P Node...")
+                current_config = config
 
                 mesh_node = RobotMeshNode(
                     robot_id=robot_id,

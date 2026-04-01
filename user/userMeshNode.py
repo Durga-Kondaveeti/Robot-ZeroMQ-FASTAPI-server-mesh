@@ -95,16 +95,24 @@ class UserMeshNode:
 
     def send_disconnect(self):
         """Signals the mesh to tear down and closes local sockets."""
+        # 1. Send to the Command topic (so the Robot shuts down)
         self.send_command("disconnect")
+
+        # 2. Send to the Status topic (so the Cloud Player shuts down)
+        status_topic = f"robot/{self.robot_id}/status".encode('utf-8')
+        status_payload = json.dumps({"command": "disconnect"}).encode('utf-8')
+        self.pub_socket.send_multipart([status_topic, status_payload])
+
         self.running = False
-        # Notify the Control Plane to clear the config so we can reconnect later
+
+        # 3. Notify the Control Plane to clear the config (FIXED: self.robot_id)
         try:
-            requests.post(f"{CLOUD_URL}/disconnect/{self.target_robot}")
+            requests.post(f"{CLOUD_URL}/disconnect/{self.robot_id}")
         except Exception as e:
             print(f"Error disconnecting from cloud: {e}")
 
-        # Give the disconnect message a fraction of a second to send before closing the socket
-        time.sleep(0.1)
+        # Give the disconnect messages a fraction of a second to send before closing the socket
+        time.sleep(0.2)
         self.pub_socket.close()
         self.sub_socket.close()
 
