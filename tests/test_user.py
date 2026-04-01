@@ -3,34 +3,92 @@ import pytest
 from unittest.mock import patch, MagicMock
 
 
+# --- get_robot_selection ---
+
 @patch("user.main.requests.get")
-def test_lists_active_robots(mock_get, capsys):
-    mock_get.return_value.json.return_value = {"active_robots": ["robot-123-4567"]}
-    
-    from user.main import main
-    main()
-    
-    captured = capsys.readouterr()
-    assert "robot-123-4567" in captured.out
+def test_get_robot_selection_returns_robot(mock_get):
+    mock_get.return_value.json.return_value = {"active_robots": ["robot-123"]}
+
+    with patch("user.main.clear_terminal"), \
+         patch("builtins.input", return_value="1"):
+        from user.main import get_robot_selection
+        result = get_robot_selection()
+
+    assert result == "robot-123"
 
 
 @patch("user.main.requests.get")
-def test_no_active_robots(mock_get, capsys):
+def test_get_robot_selection_quit_returns_none(mock_get):
+    mock_get.return_value.json.return_value = {"active_robots": ["robot-123"]}
+
+    with patch("user.main.clear_terminal"), \
+         patch("builtins.input", return_value="Q"):
+        from user.main import get_robot_selection
+        result = get_robot_selection()
+
+    assert result is None
+
+
+@patch("user.main.requests.get")
+def test_get_robot_selection_no_robots(mock_get, capsys):
     mock_get.return_value.json.return_value = {"active_robots": []}
-    
-    from user.main import main
-    main()
-    
-    captured = capsys.readouterr()
-    assert "No active robots found" in captured.out
+
+    with patch("user.main.clear_terminal"), \
+         patch("builtins.input", side_effect=["R", "Q"]):
+        from user.main import get_robot_selection
+        result = get_robot_selection()
+
+    assert result is None
+
+
+# --- main ---
+
+@patch("user.main.requests.get")
+@patch("user.main.requests.post")
+def test_main_exits_if_user_quits_selection(mock_post, mock_get):
+    with patch("user.main.clear_terminal"), \
+         patch("builtins.input", return_value="Q"), \
+         patch("user.main.RobotDashboard") as mock_gui:
+        from user.main import main
+        main()
+
+    mock_gui.assert_not_called()
 
 
 @patch("user.main.requests.get")
-def test_cloud_unreachable(mock_get, capsys):
-    mock_get.side_effect = Exception("Connection refused")
-    
-    from user.main import main
-    main()
-    
-    captured = capsys.readouterr()
-    assert "Error fetching robots" in captured.out
+@patch("user.main.requests.post")
+def test_main_launches_dashboard_on_connect(mock_post, mock_get):
+    mock_get.return_value.json.return_value = {"active_robots": ["robot-123"]}
+    mock_post.return_value.raise_for_status = MagicMock()
+    mock_post.return_value.json.return_value = {
+        "mesh_config": {
+            "user_pub_port": 5003,
+            "robot_pub_port": 5001,
+            "player_pub_port": 5002
+        }
+    }
+
+    with patch("user.main.clear_terminal"), \
+         patch("builtins.input", return_value="1"), \
+         patch("user.main.RobotDashboard") as mock_gui:
+        mock_gui.return_value.mainloop = MagicMock()
+        from user.main import main
+        main()
+
+    mock_gui.assert_called_once()
+    mock_gui.return_value.mainloop.assert_called_once()
+
+
+@patch("user.main.requests.get")
+@patch("user.main.requests.post")
+def test_main_exits_gracefully_if_connect_fails(mock_post, mock_get):
+    mock_get.return_value.json.return_value = {"active_robots": ["robot-123"]}
+    mock_post.side_effect = Exception("Connection refused")
+
+    with patch("user.main.clear_terminal"), \
+         patch("builtins.input", return_value="1"), \
+         patch("user.main.RobotDashboard") as mock_gui:
+        from user.main import main
+        main()
+
+    mock_gui.assert_not_called()

@@ -1,7 +1,9 @@
 # tests/test_mesh_nodes.py
 import json
+import queue
 import pytest
 from unittest.mock import MagicMock, patch
+import zmq as zmq_lib
 
 
 # --- RobotMeshNode ---
@@ -20,13 +22,12 @@ def robot_node():
 
 
 def _run_listen_once(node, topic_bytes, payload_bytes):
-    """Runs the robot listen loop for exactly one message then stops cleanly."""
     node.robot_hardware = MagicMock()
     node.running = True
     node.sub_socket = MagicMock()
 
     def fake_recv():
-        node.running = False  # stop the while loop after this message
+        node.running = False
         return (topic_bytes, payload_bytes)
 
     node.sub_socket.recv_multipart.side_effect = fake_recv
@@ -78,17 +79,58 @@ def test_robot_routes_right_command(robot_node):
     robot_node.robot_hardware.turn_right.assert_called_once()
 
 
+def test_robot_routes_disconnect_calls_shutdown(robot_node):
+    robot_node.pub_socket = MagicMock()
+    robot_node.sub_socket = MagicMock()
+    robot_node.context = MagicMock()
+    robot_node.robot_hardware = MagicMock()
+    robot_node.shutdown = MagicMock()
+    robot_node.running = True
+
+    topic = f"robot/{robot_node.robot_id}/command".encode()
+    payload = json.dumps({"command": "disconnect"}).encode()
+
+    def fake_recv():
+        robot_node.running = False
+        return (topic, payload)
+
+    robot_node.sub_socket.recv_multipart.side_effect = fake_recv
+    robot_node._listen_loop()
+
+    robot_node.shutdown.assert_called_once()
+
+
+def test_robot_shutdown_closes_sockets(robot_node):
+    robot_node.running = True
+    robot_node.pub_socket = MagicMock()
+    robot_node.sub_socket = MagicMock()
+    robot_node.context = MagicMock()
+
+    robot_node.shutdown()
+
+    assert robot_node.running == False
+    robot_node.pub_socket.close.assert_called_once()
+    robot_node.sub_socket.close.assert_called_once()
+    robot_node.context.term.assert_called_once()
+
+
 # --- UserMeshNode ---
 
 @pytest.fixture
-def user_node():
+def mock_callback():
+    return MagicMock()
+
+
+@pytest.fixture
+def user_node(mock_callback):
     with patch("user.mesh_node.zmq.Context"):
         from user.mesh_node import UserMeshNode
         node = UserMeshNode(
             robot_id="robot-1",
             user_port=5003,
             robot_port=5001,
-            player_port=5002
+            player_port=5002,
+            on_message_received=mock_callback
         )
         yield node
 
@@ -104,10 +146,10 @@ def test_user_node_start_sets_running(user_node):
     assert user_node.running == True
 
 
-def test_user_node_start_spawns_one_thread(user_node):
+def test_user_node_start_spawns_two_threads(user_node):
     with patch("user.mesh_node.threading.Thread") as mock_thread:
         user_node.start()
-    assert mock_thread.call_count == 1
+    assert mock_thread.call_count == 2
 
 
 def test_user_send_command(user_node):
@@ -119,6 +161,96 @@ def test_user_send_command(user_node):
     user_node.pub_socket.send_multipart.assert_called_once_with(
         [expected_topic, expected_payload]
     )
+
+
+def test_user_listen_loop_routes_message_to_callback(user_node, mock_callback):
+    user_node.running = True
+    user_node.sub_socket = MagicMock()
+
+    topic = f"robot/{user_node.robot_id}/sensor".encode()
+    payload = json.dumps({"temperature": 30.0}).encode()
+
+    def fake_recv(flags=None):
+        user_node.running = False
+        return (topic, payload)
+
+    user_node.sub_socket.recv_multipart.side_effect = fake_recv
+    user_node._listen_loop()
+
+    mock_callback.assert_called()
+    assert "temperature" in mock_callback.call_args[0][0]
+
+
+def test_user_listen_loop_handles_zmq_again_without_crashing(user_node):
+    """zmq.Again (empty pipe) should be swallowed silently."""
+    user_node.running = True
+    user_node.sub_socket = MagicMock()
+
+    call_count = 0
+    def fake_recv(flags=None):
+        nonlocal call_count
+        call_count += 1
+        if call_count >= 3:
+            user_node.running = False
+        raise zmq_lib.Again()
+
+    user_node.sub_socket.recv_multipart.side_effect = fake_recv
+    user_node._listen_loop()  # Should not raise
+
+
+def test_user_send_disconnect(user_node):
+    user_node.pub_socket = MagicMock()
+    user_node.sub_socket = MagicMock()
+    user_node.running = True
+
+    user_node.send_disconnect()
+
+    assert user_node.running == False
+    user_node.pub_socket.close.assert_called_once()
+    user_node.sub_socket.close.assert_called_once()
+
+
+# --- RobotDashboard (GUI) ---
+
+def test_dashboard_close_connection_calls_disconnect():
+    with patch("user.gui.tk.Tk.__init__", return_value=None):
+        from user.gui import RobotDashboard
+        dashboard = RobotDashboard.__new__(RobotDashboard)
+        dashboard.mesh = MagicMock()
+        dashboard.after = MagicMock()
+        dashboard.log_message = MagicMock()
+
+        dashboard.close_connection()
+
+        dashboard.mesh.send_disconnect.assert_called_once()
+        dashboard.after.assert_called_once()
+
+
+def test_dashboard_queue_message_puts_to_queue():
+    with patch("user.gui.tk.Tk.__init__", return_value=None):
+        from user.gui import RobotDashboard
+        dashboard = RobotDashboard.__new__(RobotDashboard)
+        dashboard.msg_queue = queue.Queue()
+
+        dashboard.queue_message("hello from mesh")
+
+        assert not dashboard.msg_queue.empty()
+        assert dashboard.msg_queue.get() == "hello from mesh"
+
+
+def test_dashboard_check_queue_drains_messages():
+    with patch("user.gui.tk.Tk.__init__", return_value=None):
+        from user.gui import RobotDashboard
+        dashboard = RobotDashboard.__new__(RobotDashboard)
+        dashboard.msg_queue = queue.Queue()
+        dashboard.log_message = MagicMock()
+        dashboard.after = MagicMock()
+
+        dashboard.msg_queue.put("msg1")
+        dashboard.msg_queue.put("msg2")
+        dashboard.check_queue()
+
+        assert dashboard.log_message.call_count == 2
 
 
 # --- robot/main.py mesh integration ---

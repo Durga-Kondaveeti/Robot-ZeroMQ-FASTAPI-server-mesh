@@ -19,18 +19,18 @@ The system is separated into two distinct layers to ensure scalability and a cle
 ## Repository Structure
 ```text
 repo/
-├── cloud_service/      # FastAPI orchestrator and Player background process [cite: 55, 56]
-├── robot/              # Robot simulator network logic and mocked hardware SDK [cite: 57, 58]
-├── user/               # CLI dashboard client [cite: 59, 60]
+├── cloud_service/      # FastAPI orchestrator and Player background process
+├── robot/              # Robot simulator network logic and mocked hardware SDK
+├── user/               # CLI dashboard client
 ├── run.py              # Orchestrator script to run all components locally
-├── requirements.txt    # Python dependencies [cite: 62]
-└── README.md           # Documentation [cite: 61]
+├── requirements.txt    # Python dependencies
+└── README.md           # Documentation
 ```
 
 ## Functional Flow & Topics
 All real-time communication over the mesh utilizes the following topics:
 * `robot/{robot_id}/sensor`: Robot publishes raw sensor data (e.g., `{ "state": 25.5 }`). Subscribed by the Player and User.
-* `robot/{robot_id}/processed`: Player publishes analyzed data (e.g., `{ "state": 25.5, "status": "normal" }`). Subscribed by the User[cite: 34].
+* `robot/{robot_id}/processed`: Player publishes analyzed data (e.g., `{ "state": 25.5, "status": "normal" }`). Subscribed by the User
 * `robot/{robot_id}/command`: User publishes control commands (e.g., `{ "command": "stop" }`). Subscribed by the Robot to actuate the mocked hardware.
 * `robot/{robot_id}/status`: Used for general status updates from any entity. Subscribed by all.
 
@@ -41,7 +41,7 @@ All real-time communication over the mesh utilizes the following topics:
 ## Additional features Addressed
 * **Scalability:** By using FastAPI strictly for discovery, the Cloud Service is completely unburdened by high-frequency telemetry data, allowing it to efficiently manage thousands of robots.
 * **Resource Management & Error Handling:** The REST API expects regular heartbeats. If a robot disconnects, it is gracefully purged from the registry. Player processes are safely terminated when connections drop.
-* **Code Quality:** No hardcoded network routes exist in the mesh. Everything is dynamically provisioned during the matchmaking phase[cite: 64].
+* **Code Quality:** No hardcoded network routes exist in the mesh. Everything is dynamically provisioned during the matchmaking phase
 
 ## How to Run
 To be completed

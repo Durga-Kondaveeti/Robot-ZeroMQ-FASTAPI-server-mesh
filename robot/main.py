@@ -8,7 +8,7 @@ CLOUD_URL = "http://localhost:8000"
 
 def main(robot_id: str):
     print(f"--- Booting Robot Edge Device: {robot_id} ---")
-    
+
     # 1. Register with the Cloud Service
     try:
         res = requests.post(f"{CLOUD_URL}/robot/register?robot_id={robot_id}")
@@ -25,14 +25,14 @@ def main(robot_id: str):
         try:
             res = requests.post(f"{CLOUD_URL}/robot/{robot_id}/heartbeat")
             data = res.json()
-            
+
             # Check if a user has connected and triggered the mesh setup
             config = data.get("mesh_config")
-            
+
             # If we received a config and haven't spun up our ZMQ node yet
             if config and mesh_node is None:
                 print(f"\n[Robot Orchestrator] Received mesh configuration. Spawning P2P Node...")
-                
+
                 mesh_node = RobotMeshNode(
                     robot_id=robot_id,
                     pub_port=config["robot_pub_port"],
@@ -40,10 +40,10 @@ def main(robot_id: str):
                     user_port=config["user_pub_port"]
                 )
                 mesh_node.start()
-                
+
         except Exception as e:
             print(f"[Robot Orchestrator] Heartbeat failed: {e}")
-            
+
         time.sleep(1) # Wait 1 second before next heartbeat
 
 
