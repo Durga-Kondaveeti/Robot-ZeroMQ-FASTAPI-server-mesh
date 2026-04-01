@@ -1,5 +1,8 @@
 import multiprocessing
+import os
 import socket
+import subprocess
+import sys
 import time
 from fastapi import FastAPI, HTTPException
 from typing import Dict
@@ -59,11 +62,23 @@ def get_free_port() -> int:
         return s.getsockname()[1]
 
 
+def launch_player_terminal(robot_id: str, player_port: int, robot_port: int, user_port: int):
+    """Spawns the Cloud Player in a brand new, visible terminal window."""
+    command = f"python3 -m cloud_service.player {robot_id} {player_port} {robot_port} {user_port}"
+
+    if sys.platform == "darwin":
+        script = f'tell application "Terminal" to do script "cd {os.getcwd()} && source .venv/bin/activate && {command}"'
+        subprocess.run(["osascript", "-e", script])
+    elif sys.platform.startswith("linux"):
+        subprocess.Popen(["gnome-terminal", "--title", f"Cloud Player - {robot_id}", "--", "bash", "-c", f"source .venv/bin/activate && {command}; exec bash"])
+    else:
+        # Fallback if OS isn't caught
+        subprocess.Popen(command.split())
+
+
 @app.post("/connect/{robot_id}")
 def connect_user_to_robot(robot_id: str):
-    """
-    Called by the User. Orchestrates the creation of the P2P mesh.
-    """
+    """Called by the User. Orchestrates the creation of the P2P mesh."""
     if robot_id not in registry:
         raise HTTPException(status_code=404, detail="Robot not found or offline")
 
@@ -80,21 +95,15 @@ def connect_user_to_robot(robot_id: str):
     )
     session.mesh_config = config
 
-    # 2. Spawn the Cloud Player as a new process
-    player_process = multiprocessing.Process(
-        target=run_player,
-        args=(
-            robot_id,
-            config.player_pub_port,
-            config.robot_pub_port,
-            config.user_pub_port
-        ),
-        daemon=True # background process
+    # 2. Spawn the Cloud Player in a visible terminal window
+    launch_player_terminal(
+        robot_id,
+        config.player_pub_port,
+        config.robot_pub_port,
+        config.user_pub_port
     )
-    player_process.start()
-    session.player_process = player_process
 
-    print(f"[Cloud] Orchestrated mesh for '{robot_id}'. Player PID: {player_process.pid}")
+    print(f"[Cloud] Orchestrated mesh for '{robot_id}'. Terminal spawned.")
 
     return {"message": "Mesh provisioned successfully", "mesh_config": config}
 
@@ -104,5 +113,4 @@ def disconnect_user(robot_id: str):
     """Called by the User to clear the mesh configuration."""
     if robot_id in registry:
         registry[robot_id].mesh_config = None
-        # Note: We will handle the actual Player teardown in the next commit!
     return {"message": "Mesh configuration cleared"}

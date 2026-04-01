@@ -63,3 +63,16 @@ def run_player(robot_id: str, player_port: int, robot_port: int, user_port: int)
     sub_socket.close()
     context.term()
     print(f"[Cloud Player {robot_id}] Teardown complete. Process exiting.")
+
+# ... (Keep all your existing run_player code above)
+
+if __name__ == "__main__":
+    import sys
+    if len(sys.argv) == 5:
+        r_id = sys.argv[1]
+        p_port = int(sys.argv[2])
+        r_port = int(sys.argv[3])
+        u_port = int(sys.argv[4])
+        run_player(r_id, p_port, r_port, u_port)
+    else:
+        print("[INVALID DATA]: Unable to start player")
