@@ -1,6 +1,6 @@
 import os
 import requests
-from .mesh_node import UserMeshNode
+from .gui import RobotDashboard
 
 CLOUD_URL = "http://localhost:8000"
 
@@ -10,6 +10,7 @@ def clear_terminal():
 
 
 def get_robot_selection():
+    """Handles the terminal UI for browsing and selecting active robots."""
     while True:
         clear_terminal()
         print("--- User Control Dashboard ---")
@@ -37,19 +38,20 @@ def get_robot_selection():
 
         except Exception as e:
             print(f"Error fetching robots: {e}")
-            input("Press any key to retry...")
+            input("Press Enter to retry...")
+
 
 def main():
-    print("--- User Control Dashboard ---")
-
     # 1. Fetch available robots from the Cloud Service
     target_robot = get_robot_selection()
-    # User selected Quit
-    if target_robot == None:
+
+    # Exit cleanly if the user selected Quit
+    if target_robot is None:
+        print("Exiting User Dashboard.")
         return
 
     # 2. Request connection to form the P2P mesh
-    print(f"Connecting to {target_robot}...")
+    print(f"\nConnecting to {target_robot}...")
     try:
         res = requests.post(f"{CLOUD_URL}/connect/{target_robot}")
         res.raise_for_status()
@@ -58,29 +60,11 @@ def main():
         print(f"Failed to establish mesh connection: {e}")
         return
 
-    # 3. Start the ZMQ Mesh Node
-    mesh = UserMeshNode(
-        robot_id=target_robot,
-        user_port=config["user_pub_port"],
-        robot_port=config["robot_pub_port"],
-        player_port=config["player_pub_port"]
-    )
-    mesh.start()
-
-    # 4. Interactive Command Loop
-    print("\n--- Mesh Established ---")
-    print("Commands: forward, stop, left, right, exit")
-
-    while True:
-        cmd = input("Command: ").strip().lower()
-        if cmd == 'exit':
-            mesh.send_disconnect()
-            print("Shutting down user...")
-            break
-        elif cmd in ['forward', 'stop', 'left', 'right']:
-            mesh.send_command(cmd)
-        else:
-            print("Unknown command. Try: forward, stop, left, right, or exit.")
+    # 3. Hand off the config to the Graphical Dashboard
+    # The RobotDashboard class will initialize the UserMeshNode and manage the ZMQ threads
+    print("Mesh provisioned. Launching Graphical Dashboard...")
+    app = RobotDashboard(target_robot, config)
+    app.mainloop()
 
 if __name__ == "__main__":
     main()
