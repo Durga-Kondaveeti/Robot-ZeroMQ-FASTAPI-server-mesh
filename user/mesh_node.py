@@ -42,7 +42,7 @@ class UserMeshNode:
         for topic in topics:
             self.sub_socket.setsockopt_string(zmq.SUBSCRIBE, topic)
 
-        self.on_message_received(f"[User Mesh] Dashboard online! Publishing commands on {self.user_port}")
+        self.on_message_received((f"[User Mesh] Dashboard online! Publishing commands on {self.user_port}", "system_alert"))
 
         # Start background threads for networking
         threading.Thread(target=self._listen_loop, daemon=True).start()
@@ -57,31 +57,38 @@ class UserMeshNode:
 
             # Check for mesh health: If no messages received in 5s, peer might be gone
             if time.time() - self.last_peer_activity > 5.0:
-                self.on_message_received("[Warning] Mesh Timeout: No activity from Robot/Player.")
+                self.on_message_received(("[Warning] Mesh Timeout: No activity from Robot/Player.", "system_alert"))
 
             time.sleep(2)
 
     def _listen_loop(self):
-        """Continuously receives and prints data from the mesh."""
         while self.running:
             try:
-                # flags=zmq.NOBLOCK ensures this thread doesn't hang forever when we want to close the app
                 topic_bytes, msg_bytes = self.sub_socket.recv_multipart(flags=zmq.NOBLOCK)
 
                 self.last_peer_activity = time.time()
                 topic = topic_bytes.decode('utf-8')
                 data = json.loads(msg_bytes.decode('utf-8'))
 
-                # Requirement: Each entity should print all data it receives from topics it's subscribed to
-                # We route this to the GUI via the callback.
-                self.on_message_received(f"[Incoming Data] {topic}: {data}")
+                # Calculate Simple Latency if the payload has a timestamp
+                latency_str = ""
+                if "timestamp" in data:
+                    latency_ms = (time.time() - data["timestamp"]) * 1000
+                    latency_str = f" [Latency: {latency_ms:.1f} ms]"
+
+                # Route to GUI with appropriate color tags
+                if topic.endswith("/sensor"):
+                    self.on_message_received((f"[Robot Raw] {data}{latency_str}", "robot_raw"))
+                elif topic.endswith("/processed"):
+                    self.on_message_received((f"[Cloud Processed] {data}{latency_str}", "player_processed"))
+                else:
+                    self.on_message_received((f"[Status] {topic}: {data}", "system_alert"))
 
             except zmq.Again:
-                # Expected exception in NOBLOCK mode when no message is currently in the pipe
-                time.sleep(0.1)
+                time.sleep(0.05)
             except Exception as e:
                 if self.running:
-                    self.on_message_received(f"[User Network Error] {e}")
+                    self.on_message_received((f"[Error] {e}", "system_alert"))
 
     def send_disconnect(self):
         """Signals the mesh to tear down and closes local sockets."""

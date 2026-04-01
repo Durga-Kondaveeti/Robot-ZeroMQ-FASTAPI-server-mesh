@@ -87,14 +87,15 @@ class RobotMeshNode:
 
         while self.running:
             try:
-                # Get fresh data from the mocked hardware SDK
                 sensor_data = self.robot_hardware.read_sensor()
 
-                # Publish to the mesh
+                # ADD THIS: Simple timestamp for latency tracking
+                sensor_data["timestamp"] = time.time()
+
                 self.pub_socket.send_multipart([
                     sensor_topic,
                     json.dumps(sensor_data).encode('utf-8')
                 ])
-                time.sleep(1) # Publish once per second
+                time.sleep(1)
             except Exception as e:
                 print(f"[Robot Network Error] Publish loop failed: {e}")

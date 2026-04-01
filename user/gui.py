@@ -37,9 +37,14 @@ class RobotDashboard(tk.Tk):
         # Top Label
         tk.Label(self, text="Real-Time Telemetry", font=("Arial", 14, "bold")).pack(pady=5)
 
-        # Scrolled Text Box for Logs (Read-only)
-        self.log_area = scrolledtext.ScrolledText(self, wrap=tk.WORD, width=70, height=15, state='disabled')
+        # Set background to black for a "terminal" feel
+        self.log_area = scrolledtext.ScrolledText(self, wrap=tk.WORD, width=75, height=18, bg="black", fg="white", state='disabled')
         self.log_area.pack(pady=5, padx=10)
+        # Configure color tags
+        self.log_area.tag_config('robot_raw', foreground='white')
+        self.log_area.tag_config('player_processed', foreground='cyan')
+        self.log_area.tag_config('system_alert', foreground='yellow')
+        self.log_area.tag_config('latency', foreground='red')
 
         # Control Buttons Frame
         btn_frame = tk.Frame(self)
@@ -61,17 +66,21 @@ class RobotDashboard(tk.Tk):
     def check_queue(self):
         """Checks for new messages and updates the UI safely."""
         while not self.msg_queue.empty():
-            msg = self.msg_queue.get()
-            self.log_message(msg)
-
-        # Check again in 100ms
+            # Expecting a tuple of (message, tag) from the mesh node
+            msg, tag = self.msg_queue.get()
+            self.log_message(msg, tag)
         self.after(100, self.check_queue)
 
-    def log_message(self, msg):
+    def log_message(self, msg, tag=None):
         """Inserts text into the scrolling log area."""
         self.log_area.config(state='normal')
-        self.log_area.insert(tk.END, msg + "\n")
-        self.log_area.see(tk.END) # Auto-scroll to bottom
+
+        if tag:
+            self.log_area.insert(tk.END, msg + "\n", tag)
+        else:
+            self.log_area.insert(tk.END, msg + "\n")
+
+        self.log_area.see(tk.END)
         self.log_area.config(state='disabled')
 
     def close_connection(self):
