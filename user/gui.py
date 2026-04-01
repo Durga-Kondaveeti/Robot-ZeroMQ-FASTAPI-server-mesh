@@ -2,9 +2,7 @@ import requests
 import queue
 import tkinter as tk
 from tkinter import scrolledtext
-from .mesh_node import UserMeshNode
-
-CLOUD_URL = "http://localhost:8000"
+from .userMeshNode import UserMeshNode
 
 class RobotDashboard(tk.Tk):
     def __init__(self, target_robot, config):
@@ -83,7 +81,8 @@ class RobotDashboard(tk.Tk):
         self.log_area.see(tk.END)
         self.log_area.config(state='disabled')
 
+
     def close_connection(self):
         self.mesh.send_disconnect()
-        self.log_message("Disconnected. Closing UI...")
-        self.after(1000, self.destroy) # Close window after 1 second
+        self.log_message("Disconnected. Clearing mesh on Cloud...")
+        self.after(1000, self.destroy)

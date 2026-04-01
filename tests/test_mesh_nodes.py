@@ -124,7 +124,7 @@ def mock_callback():
 @pytest.fixture
 def user_node(mock_callback):
     with patch("user.mesh_node.zmq.Context"):
-        from user.mesh_node import UserMeshNode
+        from user.userMeshNode import UserMeshNode
         node = UserMeshNode(
             robot_id="robot-1",
             user_port=5003,

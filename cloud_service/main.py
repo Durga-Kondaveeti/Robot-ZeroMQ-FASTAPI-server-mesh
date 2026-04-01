@@ -25,15 +25,15 @@ def register_robot(robot_id: str):
 @app.post("/robot/{robot_id}/heartbeat", response_model=HeartbeatResponse)
 def robot_heartbeat(robot_id: str):
     """
-    Robot pings this every second. 
-    If a user has initiated a connection, we return the mesh configuration 
+    Robot pings this every second.
+    If a user has initiated a connection, we return the mesh configuration
     so the robot can start its ZMQ pub/sub server.
     """
     if robot_id not in registry:
         raise HTTPException(status_code=404, detail="Robot not registered")
-    
+
     registry[robot_id].last_heartbeat = time.time()
-    
+
     # Return the config if a user has requested a connection
     config = registry[robot_id].mesh_config
     return HeartbeatResponse(status="alive", mesh_config=config)
@@ -45,7 +45,7 @@ def list_robots():
     current_time = time.time()
     # Filter out robots that haven't sent a heartbeat in the last 5 seconds
     active_robots = [
-        r_id for r_id, session in registry.items() 
+        r_id for r_id, session in registry.items()
         if current_time - session.last_heartbeat < 5.0
     ]
     return {"active_robots": active_robots}
@@ -65,9 +65,9 @@ def connect_user_to_robot(robot_id: str):
     """
     if robot_id not in registry:
         raise HTTPException(status_code=404, detail="Robot not found or offline")
-        
+
     session = registry[robot_id]
-        
+
     if session.player_process and session.player_process.is_alive():
         return {"message": "Already connected", "mesh_config": session.mesh_config}
 
@@ -78,21 +78,30 @@ def connect_user_to_robot(robot_id: str):
         user_pub_port=get_free_port()
     )
     session.mesh_config = config
-    
+
     # 2. Spawn the Cloud Player as a new process
     player_process = multiprocessing.Process(
         target=run_player,
         args=(
-            robot_id, 
-            config.player_pub_port, 
-            config.robot_pub_port, 
+            robot_id,
+            config.player_pub_port,
+            config.robot_pub_port,
             config.user_pub_port
         ),
         daemon=True # background process
     )
     player_process.start()
     session.player_process = player_process
-    
+
     print(f"[Cloud] Orchestrated mesh for '{robot_id}'. Player PID: {player_process.pid}")
-    
+
     return {"message": "Mesh provisioned successfully", "mesh_config": config}
+
+
+@app.post("/disconnect/{robot_id}")
+def disconnect_user(robot_id: str):
+    """Called by the User to clear the mesh configuration."""
+    if robot_id in registry:
+        registry[robot_id].mesh_config = None
+        # Note: We will handle the actual Player teardown in the next commit!
+    return {"message": "Mesh configuration cleared"}

@@ -1,7 +1,10 @@
+import requests
 import zmq
 import json
 import threading
 import time
+
+CLOUD_URL = "http://localhost:8000"
 
 class UserMeshNode:
     """
@@ -94,11 +97,17 @@ class UserMeshNode:
         """Signals the mesh to tear down and closes local sockets."""
         self.send_command("disconnect")
         self.running = False
+        # Notify the Control Plane to clear the config so we can reconnect later
+        try:
+            requests.post(f"{CLOUD_URL}/disconnect/{self.target_robot}")
+        except Exception as e:
+            print(f"Error disconnecting from cloud: {e}")
 
         # Give the disconnect message a fraction of a second to send before closing the socket
         time.sleep(0.1)
         self.pub_socket.close()
         self.sub_socket.close()
+
 
     def send_command(self, command: str):
         """Publishes a JSON command to the Robot over the mesh."""
