@@ -3,6 +3,8 @@ import time
 import sys
 import os
 
+from common.config import CLOUD_PORT
+
 def run_in_new_terminal(command, title):
     """
     Opens a new terminal window and executes a command.
@@ -26,10 +28,10 @@ def main():
             number_of_robots_to_launch = int(sys.argv[1])
         except:
             number_of_robots_to_launch = 2
-    
+
     # 1. Start the Cloud Service (FastAPI + Uvicorn)
     print("[1/3] Launching Cloud Service...")
-    run_in_new_terminal("uvicorn cloud_service.main:app --host 0.0.0.0 --port 8000", "Cloud Service")
+    run_in_new_terminal(f"uvicorn cloud_service.main:app --host 0.0.0.0 --port {CLOUD_PORT}", "Cloud Service")
     print("Cloud server started\n")
 
     # Give the server a moment to boot

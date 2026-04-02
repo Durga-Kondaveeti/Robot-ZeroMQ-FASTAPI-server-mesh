@@ -1,10 +1,11 @@
 import csv
 import os
 
-from cryptography.fernet import Fernet
 import zmq
 import json
 import time
+
+from common.security import MeshCipher
 
 
 def run_player(robot_id: str, player_port: int, robot_port: int, user_port: int, session_key: str):
@@ -15,7 +16,7 @@ def run_player(robot_id: str, player_port: int, robot_port: int, user_port: int,
     context = zmq.Context()
 
     # Initialize the cipher suite
-    fernet = Fernet(session_key.encode('utf-8'))
+    cipher = MeshCipher(session_key)
 
     # 1. Bind the Player's PUB socket (This is the cloud pub/sub server)
     pub_socket = context.socket(zmq.PUB)
@@ -55,9 +56,7 @@ def run_player(robot_id: str, player_port: int, robot_port: int, user_port: int,
             topic_bytes, message_bytes = sub_socket.recv_multipart()
             topic = topic_bytes.decode('utf-8')
 
-            # --- DECRYPT INCOMING PAYLOAD ---
-            decrypted_bytes = fernet.decrypt(message_bytes)
-            data = json.loads(decrypted_bytes.decode('utf-8'))
+            data = cipher.decrypt(message_bytes)
 
             # --- RESOURCE MANAGEMENT TEARDOWN ---
             if topic == status_topic:
@@ -77,9 +76,7 @@ def run_player(robot_id: str, player_port: int, robot_port: int, user_port: int,
 
                 pub_topic = f"robot/{robot_id}/processed"
 
-                # --- ENCRYPT OUTGOING PAYLOAD ---
-                json_string = json.dumps(processed_data)
-                encrypted_payload = fernet.encrypt(json_string.encode('utf-8'))
+                encrypted_payload = cipher.encrypt(processed_data)
 
                 pub_socket.send_multipart([
                     pub_topic.encode('utf-8'),

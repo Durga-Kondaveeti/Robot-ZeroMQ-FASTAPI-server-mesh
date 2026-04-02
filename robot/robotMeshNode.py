@@ -6,7 +6,9 @@ import zmq
 import json
 import threading
 import time
+
 from .jetbot import FakeJetbot
+from common.security import MeshCipher
 
 class RobotMeshNode:
     """
@@ -20,7 +22,7 @@ class RobotMeshNode:
         self.user_port = user_port
 
         # Initialize the cipher suite
-        self.fernet = Fernet(session_key.encode('utf-8'))
+        self.cipher = MeshCipher(session_key)
 
         self.robot_hardware = FakeJetbot()
         self.context = zmq.Context()
@@ -80,9 +82,7 @@ class RobotMeshNode:
                 topic_bytes, msg_bytes = self.sub_socket.recv_multipart()
                 topic = topic_bytes.decode('utf-8')
 
-                 # --- DECRYPT INCOMING PAYLOAD ---
-                decrypted_bytes = self.fernet.decrypt(msg_bytes)
-                data = json.loads(decrypted_bytes.decode('utf-8'))
+                data = self.cipher.decrypt(msg_bytes)
 
                 print(f"[Robot Network] Received on {topic}: {data}")
 
@@ -122,9 +122,7 @@ class RobotMeshNode:
 
                 sensor_data["timestamp"] = time.time()
 
-                # --- ENCRYPT OUTGOING PAYLOAD ---
-                json_string = json.dumps(sensor_data)
-                encrypted_payload = self.fernet.encrypt(json_string.encode('utf-8'))
+                encrypted_payload = self.cipher.encrypt(sensor_data)
 
                 self.pub_socket.send_multipart([
                     sensor_topic,

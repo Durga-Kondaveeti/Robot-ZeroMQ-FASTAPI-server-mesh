@@ -1,11 +1,12 @@
-from cryptography.fernet import Fernet
 import requests
 import zmq
 import json
 import threading
 import time
 
-CLOUD_URL = "http://localhost:8000"
+from common.config import CLOUD_URL
+from common.security import MeshCipher
+
 
 class UserMeshNode:
     """
@@ -17,8 +18,7 @@ class UserMeshNode:
         self.user_port = user_port
         self.robot_port = robot_port
         self.player_port = player_port
-        # Initialize the cipher suite
-        self.fernet = Fernet(session_key.encode('utf-8'))
+        self.cipher = MeshCipher(session_key)
 
         # Callback function to route incoming data to the GUI instead of the terminal
         self.on_message_received = on_message_received
@@ -62,7 +62,7 @@ class UserMeshNode:
         """Sends a heartbeat to the mesh to let others know the User is active."""
         status_topic = f"robot/{self.robot_id}/status".encode('utf-8')
         while self.running:
-            payload = self.fernet.encrypt(json.dumps({"type": "heartbeat", "source": "user"}).encode('utf-8'))
+            payload = self.cipher.encrypt({"type": "heartbeat", "source": "user"})
             self.pub_socket.send_multipart([status_topic, payload])
 
             # Check for mesh health: If no messages received in 5s, peer might be gone
@@ -79,9 +79,7 @@ class UserMeshNode:
                 self.last_peer_activity = time.time()
                 topic = topic_bytes.decode('utf-8')
 
-                # --- DECRYPT INCOMING PAYLOAD ---
-                decrypted_bytes = self.fernet.decrypt(msg_bytes)
-                data = json.loads(decrypted_bytes.decode('utf-8'))
+                data = self.cipher.decrypt(msg_bytes)
 
                 # Calculate Simple Latency if the payload has a timestamp
                 latency_str = ""
@@ -110,7 +108,7 @@ class UserMeshNode:
 
         # 2. Send to the Status topic (so the Cloud Player shuts down)
         status_topic = f"robot/{self.robot_id}/status".encode('utf-8')
-        status_payload = self.fernet.encrypt(json.dumps({"command": "disconnect"}).encode('utf-8'))
+        status_payload = self.cipher.encrypt({"command": "disconnect"})
         self.pub_socket.send_multipart([status_topic, status_payload])
 
         self.running = False
@@ -130,7 +128,5 @@ class UserMeshNode:
     def send_command(self, command: str):
         """Publishes a JSON command to the Robot over the mesh."""
         topic = f"robot/{self.robot_id}/command".encode('utf-8')
-        # --- ENCRYPT OUTGOING PAYLOAD ---
-        json_string = json.dumps({"command": command})
-        encrypted_payload = self.fernet.encrypt(json_string.encode('utf-8'))
+        encrypted_payload = self.cipher.encrypt({"command": command})
         self.pub_socket.send_multipart([topic, encrypted_payload])

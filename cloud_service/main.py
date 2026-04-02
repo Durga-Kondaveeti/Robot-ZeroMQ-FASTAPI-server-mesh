@@ -100,7 +100,6 @@ def connect_user_to_robot(robot_id: str):
     if session.player_process and session.player_process.is_alive():
         return {"message": "Already connected", "mesh_config": session.mesh_config}
 
-
     # DESIGN DECISION: ZMQ uses raw TCP, which is unencrypted. I am assuming this
     # FastAPI Control Plane would be secured via HTTPS in production. Therefore, it
     # is safe to generate a symmetric AES key (Fernet) here and distribute it to

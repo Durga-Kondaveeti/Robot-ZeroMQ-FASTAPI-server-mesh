@@ -2,7 +2,7 @@ import os
 import requests
 from .gui import RobotDashboard
 
-CLOUD_URL = "http://localhost:8000"
+from common.config import CLOUD_URL
 
 
 def clear_terminal():

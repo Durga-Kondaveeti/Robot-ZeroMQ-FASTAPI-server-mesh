@@ -4,7 +4,7 @@ import requests
 import sys
 from .robotMeshNode import RobotMeshNode
 
-CLOUD_URL = "http://localhost:8000"
+from common.config import CLOUD_URL
 
 def main(robot_id: str):
     print(f"--- Booting Robot Edge Device: {robot_id} ---")
