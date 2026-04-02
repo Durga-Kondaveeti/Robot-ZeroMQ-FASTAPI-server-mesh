@@ -1,47 +1,143 @@
 # General Robotics: Real-Time Robot Telemetry & Control Mesh
 
 ## Overview
-Real-time data channel between three simulated entities: Robot (edge device), Cloud Service, and a User. Once connected, they establish a decentralized, peer-to-peer network mesh allowing direct publish/subscribe communication between all three parties.
+Real-time data channel between three simulated entities:
+1. **Robot** (edge device)
+2. **Cloud Service**
+3. **User**.
+
+Once connected, they establish a decentralized, peer-to-peer network mesh allowing direct publish/subscribe communication between all three parties, with end-to-end encrypted payloads.
 
 ## Architecture
-The system is separated into two distinct layers to ensure scalability and a clean separation of concerns:
+The system is separated into two distinct layers to ensure scalability and a clean separation of concerns.
 
 **1. The Control Plane (Discovery & Matchmaking)**
-* Running on **FastAPI** HTTP server.
-* Handles robot registration, robot heartbeat monitoring, and connection orchestration.
-* When a user connects, the server dynamically spawns a cloud-side "Player" process and returns the necessary connection details (IPs/Ports) for the entities to form the mesh.
+- Running on a **FastAPI** HTTP server
+- Handles robot registration, heartbeat monitoring, and connection orchestration
+- When a user connects, the server generates a per-session encryption key, dynamically allocates ports, spawns a Cloud Player process, and returns the full mesh configuration to all entities
 
 **2. The Data Plane (P2P Pub/Sub Mesh)**
-* Powered by **ZeroMQ (pyzmq)**.
-* Each entity binds its own ZeroMQ `PUB` socket and connects `SUB` sockets to the others.
-* This forms a true triangle data channel where entities publish and subscribe directly to each other.
+- Powered by **ZeroMQ (pyzmq)**
+- Each entity binds its own ZMQ `PUB` socket and connects `SUB` sockets to the other two
+- All payloads are encrypted with a **Fernet (AES-128)** session key distributed at connection time
+- Forms a true triangle mesh where all three entities communicate directly
+
+```text
+    Player (Cloud)
+    /   \
+   /     \
+  /       \
+ /         \
+Robot ──── User
+```
 
 ## Repository Structure
 ```text
 repo/
 ├── cloud_service/      # FastAPI orchestrator and Player background process
-├── robot/              # Robot simulator network logic and mocked hardware SDK
-├── user/               # CLI dashboard client
-├── run.py              # Orchestrator script to run all components locally
+├── robot/              # Robot simulator, mesh node, and mocked hardware SDK
+├── user/               # GUI dashboard client and mesh node
+├── tests/              # Full pytest test suite
+├── run.py              # Unified entry point to launch all components
 ├── requirements.txt    # Python dependencies
-└── README.md           # Documentation
+└── README.md
 ```
 
-## Functional Flow & Topics
-All real-time communication over the mesh utilizes the following topics:
-* `robot/{robot_id}/sensor`: Robot publishes raw sensor data (e.g., `{ "state": 25.5 }`). Subscribed by the Player and User.
-* `robot/{robot_id}/processed`: Player publishes analyzed data (e.g., `{ "state": 25.5, "status": "normal" }`). Subscribed by the User
-* `robot/{robot_id}/command`: User publishes control commands (e.g., `{ "command": "stop" }`). Subscribed by the Robot to actuate the mocked hardware.
-* `robot/{robot_id}/status`: Used for general status updates from any entity. Subscribed by all.
-
-## Assumptions
-* **Local Network Simulation:** For demonstration on a single machine, ports are dynamically assigned or bound to `localhost` (`127.0.0.1`).
-* **Hardware Abstraction:** The robot's physical actions are mocked via a fake Jetbot SDK class.
-
-## Additional features Addressed
-* **Scalability:** By using FastAPI strictly for discovery, the Cloud Service is completely unburdened by high-frequency telemetry data, allowing it to efficiently manage thousands of robots.
-* **Resource Management & Error Handling:** The REST API expects regular heartbeats. If a robot disconnects, it is gracefully purged from the registry. Player processes are safely terminated when connections drop.
-* **Code Quality:** No hardcoded network routes exist in the mesh. Everything is dynamically provisioned during the matchmaking phase
-
 ## How to Run
-To be completed
+
+### Prerequisites
+- Python 3.9+
+- macOS or Linux (terminal spawning uses `osascript` / `gnome-terminal`)
+
+### 1. Install Dependencies
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+### 2. Launch Everything (Recommended)
+```bash
+# Launch with 1 robot (default)
+python3 run.py
+
+# Launch with N robots
+python3 run.py 2
+```
+
+This opens separate terminal windows for:
+- Cloud Service (FastAPI on port 8000)
+- Each Robot instance
+- User GUI Dashboard
+- Cloud Player (spawned automatically when the User connects)
+
+### 3. Manual Startup (Alternative)
+Open four separate terminals, all with `.venv` activated:
+
+```bash
+# Terminal 1 — Cloud Service
+uvicorn cloud_service.main:app --host 0.0.0.0 --port 8000
+
+# Terminal 2 — Robot
+python3 -m robot.main
+
+# Terminal 3 — User
+python3 -m user.main
+
+# Terminal 4 — Cloud Player (auto-spawned, but can be run manually)
+python3 -m cloud_service.player <robot_id> <player_port> <robot_port> <user_port> <session_key>
+```
+
+### 4. Using the Dashboard
+1. The User GUI will list all active robots
+2. Select a robot number to connect
+3. The Cloud Player spawns automatically in a new terminal
+4. Use the directional buttons to send commands — telemetry streams live into the log window
+5. Click **Close Connection** to gracefully tear down the mesh
+
+### 5. Run Tests
+```bash
+pytest tests/ -v
+```
+
+## Pub/Sub Topics
+| Topic | Publisher | Subscriber(s) | Purpose |
+|---|---|---|---|
+| `robot/{id}/sensor` | Robot | Player, User | Raw sensor/location data |
+| `robot/{id}/processed` | Player | User | Analyzed data with status |
+| `robot/{id}/command` | User | Robot | Directional commands |
+| `robot/{id}/status` | Any | All | Heartbeats and shutdown signals |
+
+## Assumptions & Design Decisions
+
+### Security & Encryption
+- **Assumption:** In production, FastAPI endpoints would be secured via HTTPS/mTLS, protecting the session key in transit
+- **Enhancement:** All ZMQ payloads are encrypted with a per-session **Fernet (AES-128)** key, protecting the data plane
+- **Assumption:** CurveZMQ was intentionally avoided to keep dependencies minimal and the project easy to run
+
+### Telemetry & Sensor Data
+- **Enhancement:** The spec requires `{ "state": 25.5 }`. We match the `state` key but use a 2D coordinate array `[x, y]` that actively updates with each directional command, making the simulation more realistic for a mobile robot
+
+### Edge Cases & Resource Management
+- **Enhancement:** Duplicate registration is rejected with `HTTP 409` if a robot is currently active; stale robots (no heartbeat in 5s) are allowed to re-register
+- **Enhancement:** When a User disconnects, a shutdown signal is sent over both the command and status topics so the Robot and Cloud Player both tear down their sockets and free their ports cleanly
+- **Enhancement:** A 2-second application-level heartbeat loop over the ZMQ mesh detects silent peer drops
+
+### UX & Orchestration
+- **Enhancement:** A **tkinter GUI** cleanly separates the live telemetry stream from the command input, with color-coded log output (white = raw, cyan = processed, yellow = system alerts)
+- **Enhancement:** The Cloud Player is spawned in a **visible terminal window** to clearly demonstrate the three-node architecture
+- **Enhancement:** `run.py` provides a single command to launch the entire simulation
+
+### Performance & Logging
+- **Enhancement:** Sensor payloads carry a timestamp so the User GUI calculates and displays **real-time millisecond latency**
+- **Enhancement:** Append-only **CSV logs** are written to `logs/robot_logs/` and `logs/player_logs/` for post-session analysis
+
+## Testing
+Tests were generated with AI assistance and, they cover:
+- All ZMQ mesh node behavior (robot and user)
+- Command routing to the FakeJetbot hardware
+- Encryption/decryption flow
+- GUI queue and message rendering
+- Cloud Service endpoints (register, heartbeat, connect, disconnect)
+- Duplicate and stale robot registration
+- Graceful disconnect and reconnection
