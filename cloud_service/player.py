@@ -1,16 +1,21 @@
 import csv
 import os
 
+from cryptography.fernet import Fernet
 import zmq
 import json
 import time
 
-def run_player(robot_id: str, player_port: int, robot_port: int, user_port: int):
+
+def run_player(robot_id: str, player_port: int, robot_port: int, user_port: int, session_key: str):
     """
     The background process spawned for each connected robot.
     It forms one corner of the Pub/Sub triangle mesh.
     """
     context = zmq.Context()
+
+    # Initialize the cipher suite
+    fernet = Fernet(session_key.encode('utf-8'))
 
     # 1. Bind the Player's PUB socket (This is the cloud pub/sub server)
     pub_socket = context.socket(zmq.PUB)
@@ -49,7 +54,10 @@ def run_player(robot_id: str, player_port: int, robot_port: int, user_port: int)
         try:
             topic_bytes, message_bytes = sub_socket.recv_multipart()
             topic = topic_bytes.decode('utf-8')
-            data = json.loads(message_bytes.decode('utf-8'))
+
+            # --- DECRYPT INCOMING PAYLOAD ---
+            decrypted_bytes = fernet.decrypt(message_bytes)
+            data = json.loads(decrypted_bytes.decode('utf-8'))
 
             # --- RESOURCE MANAGEMENT TEARDOWN ---
             if topic == status_topic:
@@ -68,9 +76,14 @@ def run_player(robot_id: str, player_port: int, robot_port: int, user_port: int)
                 processed_data["status"] = "normal"
 
                 pub_topic = f"robot/{robot_id}/processed"
+
+                # --- ENCRYPT OUTGOING PAYLOAD ---
+                json_string = json.dumps(processed_data)
+                encrypted_payload = fernet.encrypt(json_string.encode('utf-8'))
+
                 pub_socket.send_multipart([
                     pub_topic.encode('utf-8'),
-                    json.dumps(processed_data).encode('utf-8')
+                    encrypted_payload
                 ])
         except Exception as e:
             print(f"[Cloud Player Error] {e}")
@@ -85,11 +98,12 @@ def run_player(robot_id: str, player_port: int, robot_port: int, user_port: int)
 
 if __name__ == "__main__":
     import sys
-    if len(sys.argv) == 5:
+    if len(sys.argv) == 6:
         r_id = sys.argv[1]
         p_port = int(sys.argv[2])
         r_port = int(sys.argv[3])
         u_port = int(sys.argv[4])
-        run_player(r_id, p_port, r_port, u_port)
+        s_key = sys.argv[5]
+        run_player(r_id, p_port, r_port, u_port, s_key)
     else:
         print("[INVALID DATA]: Unable to start player")

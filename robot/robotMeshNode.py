@@ -1,6 +1,7 @@
 import csv
 import os
 
+from cryptography.fernet import Fernet
 import zmq
 import json
 import threading
@@ -12,11 +13,14 @@ class RobotMeshNode:
     Handles the P2P ZeroMQ network layer for the robot.
     Binds a PUB socket to broadcast data and connects a SUB socket to listen for commands.
     """
-    def __init__(self, robot_id: str, pub_port: int, player_port: int, user_port: int):
+    def __init__(self, robot_id: str, pub_port: int, player_port: int, user_port: int, session_key: str):
         self.robot_id = robot_id
         self.pub_port = pub_port
         self.player_port = player_port
         self.user_port = user_port
+
+        # Initialize the cipher suite
+        self.fernet = Fernet(session_key.encode('utf-8'))
 
         self.robot_hardware = FakeJetbot()
         self.context = zmq.Context()
@@ -75,7 +79,10 @@ class RobotMeshNode:
             try:
                 topic_bytes, msg_bytes = self.sub_socket.recv_multipart()
                 topic = topic_bytes.decode('utf-8')
-                data = json.loads(msg_bytes.decode('utf-8'))
+
+                 # --- DECRYPT INCOMING PAYLOAD ---
+                decrypted_bytes = self.fernet.decrypt(msg_bytes)
+                data = json.loads(decrypted_bytes.decode('utf-8'))
 
                 print(f"[Robot Network] Received on {topic}: {data}")
 
@@ -113,9 +120,13 @@ class RobotMeshNode:
 
                 sensor_data["timestamp"] = time.time()
 
+                # --- ENCRYPT OUTGOING PAYLOAD ---
+                json_string = json.dumps(sensor_data)
+                encrypted_payload = self.fernet.encrypt(json_string.encode('utf-8'))
+
                 self.pub_socket.send_multipart([
                     sensor_topic,
-                    json.dumps(sensor_data).encode('utf-8')
+                    encrypted_payload
                 ])
                 time.sleep(1)
             except Exception as e:

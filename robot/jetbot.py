@@ -17,11 +17,11 @@ class FakeJetbot:
         self.status = "stopped"
         self.speed = 0.0
         print("\n[HARDWARE] Brakes applied: Stopped")
-        
+
     def turn_left(self):
         self.status = "turning_left"
         print("\n[HARDWARE] Steering: Turning left")
-        
+
     def turn_right(self):
         self.status = "turning_right"
         print("\n[HARDWARE] Steering: Turning right")

@@ -22,6 +22,7 @@ class RobotDashboard(tk.Tk):
             user_port=config["user_pub_port"],
             robot_port=config["robot_pub_port"],
             player_port=config["player_pub_port"],
+            session_key=config["secret_key"],
             on_message_received=self.queue_message
         )
         self.mesh.start()

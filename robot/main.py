@@ -45,7 +45,8 @@ def main(robot_id: str):
                     robot_id=robot_id,
                     pub_port=config["robot_pub_port"],
                     player_port=config["player_pub_port"],
-                    user_port=config["user_pub_port"]
+                    user_port=config["user_pub_port"],
+                    session_key=config["secret_key"],
                 )
                 mesh_node.start()
 

@@ -6,6 +6,7 @@ class MeshConfig(BaseModel):
     robot_pub_port: int
     player_pub_port: int
     user_pub_port: int
+    secret_key: str
 
 class RegisterResponse(BaseModel):
     robot_id: str

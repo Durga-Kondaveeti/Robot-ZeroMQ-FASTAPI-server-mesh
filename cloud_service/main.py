@@ -4,6 +4,7 @@ import socket
 import subprocess
 import sys
 import time
+from cryptography.fernet import Fernet
 from fastapi import FastAPI, HTTPException
 from typing import Dict
 
@@ -62,9 +63,9 @@ def get_free_port() -> int:
         return s.getsockname()[1]
 
 
-def launch_player_terminal(robot_id: str, player_port: int, robot_port: int, user_port: int):
+def launch_player_terminal(robot_id: str, player_port: int, robot_port: int, user_port: int, session_key: str):
     """Spawns the Cloud Player in a brand new, visible terminal window."""
-    command = f"python3 -m cloud_service.player {robot_id} {player_port} {robot_port} {user_port}"
+    command = f"python3 -m cloud_service.player {robot_id} {player_port} {robot_port} {user_port} {session_key}"
 
     if sys.platform == "darwin":
         script = f'tell application "Terminal" to do script "cd {os.getcwd()} && source .venv/bin/activate && {command}"'
@@ -87,11 +88,14 @@ def connect_user_to_robot(robot_id: str):
     if session.player_process and session.player_process.is_alive():
         return {"message": "Already connected", "mesh_config": session.mesh_config}
 
+    session_key = Fernet.generate_key().decode('utf-8')
+
     # 1. Allocate ports
     config = MeshConfig(
         robot_pub_port=get_free_port(),
         player_pub_port=get_free_port(),
-        user_pub_port=get_free_port()
+        user_pub_port=get_free_port(),
+        secret_key=session_key
     )
     session.mesh_config = config
 
@@ -100,7 +104,8 @@ def connect_user_to_robot(robot_id: str):
         robot_id,
         config.player_pub_port,
         config.robot_pub_port,
-        config.user_pub_port
+        config.user_pub_port,
+        session_key
     )
 
     print(f"[Cloud] Orchestrated mesh for '{robot_id}'. Terminal spawned.")
