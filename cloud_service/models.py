@@ -16,3 +16,9 @@ class HeartbeatResponse(BaseModel):
     status: str
     mesh_config: Optional[MeshConfig] = None
 
+# Request Models
+class RobotRequest(BaseModel):
+    robot_port: int
+
+class ConnectRequest(BaseModel):
+    user_pub_port: int

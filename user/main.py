@@ -1,5 +1,7 @@
 import os
 import requests
+
+from common.get_ports import get_free_port
 from .gui import RobotDashboard
 
 from common.config import CLOUD_URL
@@ -53,7 +55,8 @@ def main():
     # 2. Request connection to form the P2P mesh
     print(f"\nConnecting to {target_robot}...")
     try:
-        res = requests.post(f"{CLOUD_URL}/connect/{target_robot}")
+        user_port = get_free_port()
+        res = requests.post(f"{CLOUD_URL}/connect/{target_robot}", json={"user_pub_port": user_port})
         res.raise_for_status()
         config = res.json()["mesh_config"]
     except Exception as e:

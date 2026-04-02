@@ -2,6 +2,8 @@ import random
 import time
 import requests
 import sys
+
+from common.get_ports import get_free_port
 from .robotMeshNode import RobotMeshNode
 
 from common.config import CLOUD_URL
@@ -11,7 +13,8 @@ def main(robot_id: str):
 
     # 1. Register with the Cloud Service
     try:
-        res = requests.post(f"{CLOUD_URL}/robot/register?robot_id={robot_id}")
+        robot_port = get_free_port()
+        res = requests.post(f"{CLOUD_URL}/robot/register?robot_id={robot_id}", json={"robot_port": robot_port})
         res.raise_for_status()
         print(f"[Robot Orchestrator] Registered successfully with Cloud.")
     except Exception as e:

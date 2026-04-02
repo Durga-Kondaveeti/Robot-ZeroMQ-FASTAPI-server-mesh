@@ -1,6 +1,11 @@
 import json
 from cryptography.fernet import Fernet, InvalidToken
 
+
+def generate_session_key():
+    return Fernet.generate_key().decode('utf-8')
+
+
 class MeshCipher:
     """
     Helper class to handle end-to-end symmetric encryption for
