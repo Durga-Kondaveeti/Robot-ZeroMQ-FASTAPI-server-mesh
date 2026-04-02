@@ -58,17 +58,17 @@ pip install -r requirements.txt
 
 ### 2. Launch Everything (Recommended)
 ```bash
-# Launch with 1 robot (default)
+# Launch with 2 robots (default)
 python3 run.py
 
 # Launch with N robots
-python3 run.py 2
+python3 run.py 5
 ```
 
 This opens separate terminal windows for:
 - Cloud Service (FastAPI on port 8000)
-- Each Robot instance
-- User GUI Dashboard
+- Each Robot instance(s)
+- User Service
 - Cloud Player (spawned automatically when the User connects)
 
 ### 3. Manual Startup (Alternative)
