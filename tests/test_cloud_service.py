@@ -29,6 +29,20 @@ def test_register_robot_appears_in_registry():
     assert "robot_1" in registry
 
 
+def test_register_duplicate_active_robot_returns_409():
+    client.post("/robot/register?robot_id=robot_1")
+    client.post("/robot/robot_1/heartbeat")  # make it active
+    res = client.post("/robot/register?robot_id=robot_1")
+    assert res.status_code == 409
+
+
+def test_register_stale_robot_allows_reregistration():
+    client.post("/robot/register?robot_id=robot_1")
+    registry["robot_1"].last_heartbeat = time.time() - 10  # backdate to stale
+    res = client.post("/robot/register?robot_id=robot_1")
+    assert res.status_code == 200
+
+
 # --- Heartbeat ---
 
 def test_heartbeat_unknown_robot_returns_404():
@@ -54,7 +68,7 @@ def test_heartbeat_returns_mesh_config_after_connect():
     with patch("cloud_service.main.multiprocessing.Process") as mock_process:
         mock_process.return_value.is_alive.return_value = False
         client.post("/connect/robot_1")
-    
+
     res = client.post("/robot/robot_1/heartbeat")
     assert res.json()["mesh_config"] is not None
 
@@ -122,5 +136,5 @@ def test_connect_already_connected():
         registry["robot_1"].player_process = MagicMock()
         registry["robot_1"].player_process.is_alive.return_value = True
         res = client.post("/connect/robot_1")
-    
+
     assert res.json()["message"] == "Already connected"
