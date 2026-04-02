@@ -21,8 +21,17 @@ registry: Dict[str, RobotSession] = {}
 @app.post("/robot/register", response_model=RegisterResponse)
 def register_robot(robot_id: str):
     """Called by the Robot when it boots up."""
+    # Check if the robot is already registered and active
+    if robot_id in registry:
+        current_time = time.time()
+        # If we received a heartbeat recently, reject the new registration
+        if current_time - registry[robot_id].last_heartbeat < 5.0:
+            print(f"[Cloud Warning] Duplicate registration attempt for active robot '{robot_id}'.")
+            raise HTTPException(status_code=409, detail="Robot ID already registered and active")
+        else:
+            print(f"[Cloud] Re-registering stale robot '{robot_id}'.")
     registry[robot_id] = RobotSession()
-    print(f"[Cloud] Robot '{robot_id}' registered.")
+    print(f"[Cloud] Robot '{robot_id}' registered successfully.")
     return RegisterResponse(robot_id=robot_id, message="Registration successful")
 
 
