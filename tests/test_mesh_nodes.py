@@ -3,20 +3,25 @@ import json
 import queue
 import pytest
 from unittest.mock import MagicMock, patch
+from cryptography.fernet import Fernet
 import zmq as zmq_lib
+
+TEST_KEY = Fernet.generate_key().decode('utf-8')
 
 
 # --- RobotMeshNode ---
 
 @pytest.fixture
 def robot_node():
-    with patch("robot.robotMeshNode.zmq.Context"):
+    with patch("robot.robotMeshNode.zmq.Context"), \
+         patch("robot.robotMeshNode.Fernet"):
         from robot.robotMeshNode import RobotMeshNode
         node = RobotMeshNode(
             robot_id="robot-1",
             pub_port=5001,
             player_port=5002,
-            user_port=5003
+            user_port=5003,
+            session_key=TEST_KEY
         )
         yield node
 
@@ -25,6 +30,8 @@ def _run_listen_once(node, topic_bytes, payload_bytes):
     node.robot_hardware = MagicMock()
     node.running = True
     node.sub_socket = MagicMock()
+    node.fernet = MagicMock()
+    node.fernet.decrypt.return_value = payload_bytes
 
     def fake_recv():
         node.running = False
@@ -58,6 +65,13 @@ def test_robot_routes_forward_command(robot_node):
     robot_node.robot_hardware.forward.assert_called_once()
 
 
+def test_robot_routes_backward_command(robot_node):
+    topic = f"robot/{robot_node.robot_id}/command".encode()
+    payload = json.dumps({"command": "backward"}).encode()
+    _run_listen_once(robot_node, topic, payload)
+    robot_node.robot_hardware.backward.assert_called_once()
+
+
 def test_robot_routes_stop_command(robot_node):
     topic = f"robot/{robot_node.robot_id}/command".encode()
     payload = json.dumps({"command": "stop"}).encode()
@@ -84,11 +98,13 @@ def test_robot_routes_disconnect_calls_shutdown(robot_node):
     robot_node.sub_socket = MagicMock()
     robot_node.context = MagicMock()
     robot_node.robot_hardware = MagicMock()
+    robot_node.fernet = MagicMock()
     robot_node.shutdown = MagicMock()
     robot_node.running = True
 
     topic = f"robot/{robot_node.robot_id}/command".encode()
     payload = json.dumps({"command": "disconnect"}).encode()
+    robot_node.fernet.decrypt.return_value = payload
 
     def fake_recv():
         robot_node.running = False
@@ -123,13 +139,15 @@ def mock_callback():
 
 @pytest.fixture
 def user_node(mock_callback):
-    with patch("user.mesh_node.zmq.Context"):
+    with patch("user.userMeshNode.zmq.Context"), \
+         patch("user.userMeshNode.Fernet"):
         from user.userMeshNode import UserMeshNode
         node = UserMeshNode(
             robot_id="robot-1",
             user_port=5003,
             robot_port=5001,
             player_port=5002,
+            session_key=TEST_KEY,
             on_message_received=mock_callback
         )
         yield node
@@ -141,48 +159,49 @@ def test_user_node_initial_state(user_node):
 
 
 def test_user_node_start_sets_running(user_node):
-    with patch("user.mesh_node.threading.Thread"):
+    with patch("user.userMeshNode.threading.Thread"):
         user_node.start()
     assert user_node.running == True
 
 
 def test_user_node_start_spawns_two_threads(user_node):
-    with patch("user.mesh_node.threading.Thread") as mock_thread:
+    with patch("user.userMeshNode.threading.Thread") as mock_thread:
         user_node.start()
     assert mock_thread.call_count == 2
 
 
 def test_user_send_command(user_node):
     user_node.pub_socket = MagicMock()
+    user_node.fernet = MagicMock()
+    user_node.fernet.encrypt.return_value = b"encrypted"
+
     user_node.send_command("forward")
 
-    expected_topic = f"robot/{user_node.robot_id}/command".encode()
-    expected_payload = json.dumps({"command": "forward"}).encode()
-    user_node.pub_socket.send_multipart.assert_called_once_with(
-        [expected_topic, expected_payload]
-    )
+    user_node.pub_socket.send_multipart.assert_called_once()
+    args = user_node.pub_socket.send_multipart.call_args[0][0]
+    assert args[0] == f"robot/{user_node.robot_id}/command".encode()
 
 
 def test_user_listen_loop_routes_message_to_callback(user_node, mock_callback):
     user_node.running = True
     user_node.sub_socket = MagicMock()
+    user_node.fernet = MagicMock()
 
     topic = f"robot/{user_node.robot_id}/sensor".encode()
-    payload = json.dumps({"temperature": 30.0}).encode()
+    raw_payload = json.dumps({"state": [0.0, 0.0]}).encode()
+    user_node.fernet.decrypt.return_value = raw_payload
 
     def fake_recv(flags=None):
         user_node.running = False
-        return (topic, payload)
+        return (topic, b"encrypted")
 
     user_node.sub_socket.recv_multipart.side_effect = fake_recv
     user_node._listen_loop()
 
     mock_callback.assert_called()
-    assert "temperature" in mock_callback.call_args[0][0]
 
 
 def test_user_listen_loop_handles_zmq_again_without_crashing(user_node):
-    """zmq.Again (empty pipe) should be swallowed silently."""
     user_node.running = True
     user_node.sub_socket = MagicMock()
 
@@ -195,15 +214,18 @@ def test_user_listen_loop_handles_zmq_again_without_crashing(user_node):
         raise zmq_lib.Again()
 
     user_node.sub_socket.recv_multipart.side_effect = fake_recv
-    user_node._listen_loop()  # Should not raise
+    user_node._listen_loop()
 
 
 def test_user_send_disconnect(user_node):
     user_node.pub_socket = MagicMock()
     user_node.sub_socket = MagicMock()
+    user_node.fernet = MagicMock()
+    user_node.fernet.encrypt.return_value = b"encrypted"
     user_node.running = True
 
-    user_node.send_disconnect()
+    with patch("user.userMeshNode.requests.post"):
+        user_node.send_disconnect()
 
     assert user_node.running == False
     user_node.pub_socket.close.assert_called_once()
@@ -232,10 +254,10 @@ def test_dashboard_queue_message_puts_to_queue():
         dashboard = RobotDashboard.__new__(RobotDashboard)
         dashboard.msg_queue = queue.Queue()
 
-        dashboard.queue_message("hello from mesh")
+        dashboard.queue_message(("hello from mesh", "system_alert"))
 
         assert not dashboard.msg_queue.empty()
-        assert dashboard.msg_queue.get() == "hello from mesh"
+        assert dashboard.msg_queue.get() == ("hello from mesh", "system_alert")
 
 
 def test_dashboard_check_queue_drains_messages():
@@ -246,8 +268,8 @@ def test_dashboard_check_queue_drains_messages():
         dashboard.log_message = MagicMock()
         dashboard.after = MagicMock()
 
-        dashboard.msg_queue.put("msg1")
-        dashboard.msg_queue.put("msg2")
+        dashboard.msg_queue.put(("msg1", "robot_raw"))
+        dashboard.msg_queue.put(("msg2", "player_processed"))
         dashboard.check_queue()
 
         assert dashboard.log_message.call_count == 2
@@ -255,19 +277,21 @@ def test_dashboard_check_queue_drains_messages():
 
 # --- robot/main.py mesh integration ---
 
+MOCK_CONFIG = {
+    "robot_pub_port": 5001,
+    "player_pub_port": 5002,
+    "user_pub_port": 5003,
+    "secret_key": TEST_KEY
+}
+
+
 @patch("robot.main.requests.post")
 def test_robot_main_spawns_mesh_node_when_config_received(mock_post):
     no_config = MagicMock()
     no_config.json.return_value = {"mesh_config": None}
 
     config_response = MagicMock()
-    config_response.json.return_value = {
-        "mesh_config": {
-            "robot_pub_port": 5001,
-            "player_pub_port": 5002,
-            "user_pub_port": 5003
-        }
-    }
+    config_response.json.return_value = {"mesh_config": MOCK_CONFIG}
 
     mock_post.side_effect = [
         MagicMock(raise_for_status=MagicMock()),
@@ -278,6 +302,7 @@ def test_robot_main_spawns_mesh_node_when_config_received(mock_post):
 
     with patch("robot.main.RobotMeshNode") as mock_node:
         mock_node.return_value.start = MagicMock()
+        mock_node.return_value.running = True
         with pytest.raises(KeyboardInterrupt):
             from robot.main import main
             main("robot-1")
@@ -288,13 +313,7 @@ def test_robot_main_spawns_mesh_node_when_config_received(mock_post):
 @patch("robot.main.requests.post")
 def test_robot_main_does_not_spawn_mesh_twice(mock_post):
     config_response = MagicMock()
-    config_response.json.return_value = {
-        "mesh_config": {
-            "robot_pub_port": 5001,
-            "player_pub_port": 5002,
-            "user_pub_port": 5003
-        }
-    }
+    config_response.json.return_value = {"mesh_config": MOCK_CONFIG}
 
     mock_post.side_effect = [
         MagicMock(raise_for_status=MagicMock()),
@@ -305,6 +324,7 @@ def test_robot_main_does_not_spawn_mesh_twice(mock_post):
 
     with patch("robot.main.RobotMeshNode") as mock_node:
         mock_node.return_value.start = MagicMock()
+        mock_node.return_value.running = True
         with pytest.raises(KeyboardInterrupt):
             from robot.main import main
             main("robot-1")

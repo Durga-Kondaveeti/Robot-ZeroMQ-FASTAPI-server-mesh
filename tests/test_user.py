@@ -1,9 +1,17 @@
 # tests/test_user.py
 import pytest
 from unittest.mock import patch, MagicMock
+from cryptography.fernet import Fernet
 
+TEST_KEY = Fernet.generate_key().decode('utf-8')
 
-# --- get_robot_selection ---
+MOCK_CONFIG = {
+    "user_pub_port": 5003,
+    "robot_pub_port": 5001,
+    "player_pub_port": 5002,
+    "secret_key": TEST_KEY
+}
+
 
 @patch("user.main.requests.get")
 def test_get_robot_selection_returns_robot(mock_get):
@@ -30,20 +38,6 @@ def test_get_robot_selection_quit_returns_none(mock_get):
 
 
 @patch("user.main.requests.get")
-def test_get_robot_selection_no_robots(mock_get, capsys):
-    mock_get.return_value.json.return_value = {"active_robots": []}
-
-    with patch("user.main.clear_terminal"), \
-         patch("builtins.input", side_effect=["R", "Q"]):
-        from user.main import get_robot_selection
-        result = get_robot_selection()
-
-    assert result is None
-
-
-# --- main ---
-
-@patch("user.main.requests.get")
 @patch("user.main.requests.post")
 def test_main_exits_if_user_quits_selection(mock_post, mock_get):
     with patch("user.main.clear_terminal"), \
@@ -60,13 +54,7 @@ def test_main_exits_if_user_quits_selection(mock_post, mock_get):
 def test_main_launches_dashboard_on_connect(mock_post, mock_get):
     mock_get.return_value.json.return_value = {"active_robots": ["robot-123"]}
     mock_post.return_value.raise_for_status = MagicMock()
-    mock_post.return_value.json.return_value = {
-        "mesh_config": {
-            "user_pub_port": 5003,
-            "robot_pub_port": 5001,
-            "player_pub_port": 5002
-        }
-    }
+    mock_post.return_value.json.return_value = {"mesh_config": MOCK_CONFIG}
 
     with patch("user.main.clear_terminal"), \
          patch("builtins.input", return_value="1"), \

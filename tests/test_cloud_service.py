@@ -88,7 +88,7 @@ def test_connect_provisions_mesh():
     with patch("cloud_service.main.multiprocessing.Process") as mock_process:
         mock_process.return_value.is_alive.return_value = False
         res = client.post("/connect/robot_1")
-    
+
     assert res.status_code == 200
     body = res.json()
     assert body["message"] == "Mesh provisioned successfully"
@@ -101,12 +101,16 @@ def test_connect_provisions_mesh():
     assert len(set(ports)) == 3
 
 
-def test_connect_spawns_player_process():
+def test_connect_provisions_mesh_and_spawns_terminal():
     client.post("/robot/register?robot_id=robot_1")
-    with patch("cloud_service.main.multiprocessing.Process") as mock_process:
-        mock_process.return_value.is_alive.return_value = False
-        client.post("/connect/robot_1")
-        mock_process.return_value.start.assert_called_once()
+    with patch("cloud_service.main.launch_player_terminal") as mock_terminal:
+        res = client.post("/connect/robot_1")
+
+    assert res.status_code == 200
+    assert res.json()["message"] == "Mesh provisioned successfully"
+    mock_terminal.assert_called_once()
+    call_args = mock_terminal.call_args[0]
+    assert call_args[0] == "robot_1"  # correct robot_id passed
 
 
 def test_connect_already_connected():
