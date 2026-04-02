@@ -54,6 +54,10 @@ class UserMeshNode:
         threading.Thread(target=self._listen_loop, daemon=True).start()
         threading.Thread(target=self._heartbeat_loop, daemon=True).start()
 
+
+    # ASSUMPTION: ZMQ PUB/SUB sockets do not naturally drop or timeout when a peer
+    # disconnects. I assumed an application-layer heartbeat was necessary to detect
+    # if the Robot or Player unexpectedly drops from the mesh.
     def _heartbeat_loop(self):
         """Sends a heartbeat to the mesh to let others know the User is active."""
         status_topic = f"robot/{self.robot_id}/status".encode('utf-8')

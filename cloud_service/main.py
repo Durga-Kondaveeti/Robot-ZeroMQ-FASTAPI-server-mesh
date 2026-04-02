@@ -21,6 +21,9 @@ registry: Dict[str, RobotSession] = {}
 @app.post("/robot/register", response_model=RegisterResponse)
 def register_robot(robot_id: str):
     """Called by the Robot when it boots up."""
+    # ASSUMPTION: If a robot reconnects while its previous session is still sending
+    # heartbeats, it might be a ghost process or a duplicate ID. I assumed it is
+    # safer to reject the new registration with a 409 Conflict to prevent hijacking.
     # Check if the robot is already registered and active
     if robot_id in registry:
         current_time = time.time()
@@ -97,6 +100,11 @@ def connect_user_to_robot(robot_id: str):
     if session.player_process and session.player_process.is_alive():
         return {"message": "Already connected", "mesh_config": session.mesh_config}
 
+
+    # DESIGN DECISION: ZMQ uses raw TCP, which is unencrypted. I am assuming this
+    # FastAPI Control Plane would be secured via HTTPS in production. Therefore, it
+    # is safe to generate a symmetric AES key (Fernet) here and distribute it to
+    # secure the real-time Data Plane.
     session_key = Fernet.generate_key().decode('utf-8')
 
     # 1. Allocate ports

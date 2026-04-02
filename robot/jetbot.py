@@ -33,6 +33,10 @@ class FakeJetbot:
         self.location[0] += 1.0
         print(f"\n[HARDWARE] Steering: Turning right. Location: {self.location}")
 
+    # DESIGN DECISION: The spec requested a simple float { "state": 25.5 }.
+    # To make the simulation more realistic for a 2D robot, I assumed a spatial
+    # coordinate array [x, y] would be a better representation of "state" while
+    # still adhering to the required payload key.
     def read_sensor(self) -> dict:
         """Simulates reading telemetry data from physical sensors."""
         return {
