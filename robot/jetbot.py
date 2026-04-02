@@ -6,33 +6,35 @@ class FakeJetbot:
     """
     def __init__(self):
         self.status = "idle"
-        self.speed = 0.0
+        # x, y axis
+        self.location = [0.0, 0.0]
 
-    def forward(self, speed: float = 1.0):
+    def forward(self):
         self.status = "moving_forward"
-        self.speed = speed
-        print(f"\n[HARDWARE] Motor engaged: Moving forward at speed {self.speed}")
+        self.location[1] += 1.0
+        print(f"\n[HARDWARE] Motor engaged: Moving forward. Location: {self.location}")
+
+    def backward(self):
+        self.status = "moving_backward"
+        self.location[1] -= 1.0
+        print(f"\n[HARDWARE] Motor engaged: Moving backward. Location: {self.location}")
 
     def stop(self):
         self.status = "stopped"
-        self.speed = 0.0
         print("\n[HARDWARE] Brakes applied: Stopped")
 
     def turn_left(self):
         self.status = "turning_left"
-        print("\n[HARDWARE] Steering: Turning left")
+        self.location[0] -= 1.0
+        print(f"\n[HARDWARE] Steering: Turning left. Location: {self.location}")
 
     def turn_right(self):
         self.status = "turning_right"
-        print("\n[HARDWARE] Steering: Turning right")
+        self.location[0] += 1.0
+        print(f"\n[HARDWARE] Steering: Turning right. Location: {self.location}")
 
     def read_sensor(self) -> dict:
         """Simulates reading telemetry data from physical sensors."""
-        # generate random values
-        temperature = round(random.uniform(25.0, 35.0), 2)
-        battery_level = random.randint(20, 100),
         return {
-            "temperature": temperature,
-            "battery_level": battery_level,
-            "hardware_state": self.status
+            "state": self.location
         }

@@ -97,6 +97,8 @@ class RobotMeshNode:
 
                     if cmd == "forward":
                         self.robot_hardware.forward()
+                    elif cmd == "backward":
+                        self.robot_hardware.backward()
                     elif cmd == "stop":
                         self.robot_hardware.stop()
                     elif cmd == "left":

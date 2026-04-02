@@ -54,6 +54,7 @@ class RobotDashboard(tk.Tk):
         tk.Button(btn_frame, text="Left", width=10, command=lambda: self.mesh.send_command("left")).grid(row=1, column=0, padx=5, pady=5)
         tk.Button(btn_frame, text="Stop", width=10, command=lambda: self.mesh.send_command("stop")).grid(row=1, column=1, padx=5, pady=5)
         tk.Button(btn_frame, text="Right", width=10, command=lambda: self.mesh.send_command("right")).grid(row=1, column=2, padx=5, pady=5)
+        tk.Button(btn_frame, text="Backward", width=10, command=lambda: self.mesh.send_command("backward")).grid(row=2, column=1, padx=5, pady=5)
 
         # Disconnect Button
         tk.Button(self, text="Close Connection", command=self.close_connection).pack(pady=5)
