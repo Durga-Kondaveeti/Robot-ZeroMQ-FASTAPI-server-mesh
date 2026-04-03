@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 from cryptography.fernet import Fernet
 import zmq as zmq_lib
 
+
 TEST_KEY = Fernet.generate_key().decode('utf-8')
 
 
@@ -13,8 +14,8 @@ TEST_KEY = Fernet.generate_key().decode('utf-8')
 
 @pytest.fixture
 def robot_node():
-    with patch("robot.robotMeshNode.zmq.Context"), \
-         patch("robot.robotMeshNode.Fernet"):
+    # Only patch zmq here — cipher mocking goes in each test via patch.object
+    with patch("robot.robotMeshNode.zmq.Context"):
         from robot.robotMeshNode import RobotMeshNode
         node = RobotMeshNode(
             robot_id="robot-1",
@@ -27,18 +28,26 @@ def robot_node():
 
 
 def _run_listen_once(node, topic_bytes, payload_bytes):
+    """
+    Drives _listen_loop for exactly one iteration.
+    cipher.decrypt now returns a dict — parse payload_bytes so the
+    dispatch logic sees the same data it would in production.
+    """
     node.robot_hardware = MagicMock()
     node.running = True
     node.sub_socket = MagicMock()
-    node.fernet = MagicMock()
-    node.fernet.decrypt.return_value = payload_bytes
+
+    parsed = json.loads(payload_bytes.decode('utf-8'))
 
     def fake_recv():
         node.running = False
         return (topic_bytes, payload_bytes)
 
     node.sub_socket.recv_multipart.side_effect = fake_recv
-    node._listen_loop()
+
+    # Patch cipher.decrypt to return the dict directly (no real crypto)
+    with patch.object(node.cipher, 'decrypt', return_value=parsed):
+        node._listen_loop()
 
 
 def test_robot_node_initial_state(robot_node):
@@ -98,20 +107,21 @@ def test_robot_routes_disconnect_calls_shutdown(robot_node):
     robot_node.sub_socket = MagicMock()
     robot_node.context = MagicMock()
     robot_node.robot_hardware = MagicMock()
-    robot_node.fernet = MagicMock()
     robot_node.shutdown = MagicMock()
     robot_node.running = True
 
     topic = f"robot/{robot_node.robot_id}/command".encode()
     payload = json.dumps({"command": "disconnect"}).encode()
-    robot_node.fernet.decrypt.return_value = payload
+    parsed = json.loads(payload.decode('utf-8'))
 
     def fake_recv():
         robot_node.running = False
         return (topic, payload)
 
     robot_node.sub_socket.recv_multipart.side_effect = fake_recv
-    robot_node._listen_loop()
+
+    with patch.object(robot_node.cipher, 'decrypt', return_value=parsed):
+        robot_node._listen_loop()
 
     robot_node.shutdown.assert_called_once()
 
@@ -139,8 +149,9 @@ def mock_callback():
 
 @pytest.fixture
 def user_node(mock_callback):
+    # Patch MeshCipher (not Fernet — it's no longer imported in userMeshNode)
     with patch("user.userMeshNode.zmq.Context"), \
-         patch("user.userMeshNode.Fernet"):
+         patch("user.userMeshNode.MeshCipher"):
         from user.userMeshNode import UserMeshNode
         node = UserMeshNode(
             robot_id="robot-1",
@@ -172,8 +183,7 @@ def test_user_node_start_spawns_two_threads(user_node):
 
 def test_user_send_command(user_node):
     user_node.pub_socket = MagicMock()
-    user_node.fernet = MagicMock()
-    user_node.fernet.encrypt.return_value = b"encrypted"
+    user_node.cipher.encrypt.return_value = b"encrypted"  # cipher, not fernet
 
     user_node.send_command("forward")
 
@@ -185,11 +195,11 @@ def test_user_send_command(user_node):
 def test_user_listen_loop_routes_message_to_callback(user_node, mock_callback):
     user_node.running = True
     user_node.sub_socket = MagicMock()
-    user_node.fernet = MagicMock()
 
     topic = f"robot/{user_node.robot_id}/sensor".encode()
-    raw_payload = json.dumps({"state": [0.0, 0.0]}).encode()
-    user_node.fernet.decrypt.return_value = raw_payload
+    # cipher.decrypt returns a dict, not bytes
+    parsed_payload = {"state": [0.0, 0.0]}
+    user_node.cipher.decrypt.return_value = parsed_payload
 
     def fake_recv(flags=None):
         user_node.running = False
@@ -220,8 +230,7 @@ def test_user_listen_loop_handles_zmq_again_without_crashing(user_node):
 def test_user_send_disconnect(user_node):
     user_node.pub_socket = MagicMock()
     user_node.sub_socket = MagicMock()
-    user_node.fernet = MagicMock()
-    user_node.fernet.encrypt.return_value = b"encrypted"
+    user_node.cipher.encrypt.return_value = b"encrypted"  # cipher, not fernet
     user_node.running = True
 
     with patch("user.userMeshNode.requests.post"):
@@ -233,6 +242,7 @@ def test_user_send_disconnect(user_node):
 
 
 # --- RobotDashboard (GUI) ---
+# (unchanged — these all passed already)
 
 def test_dashboard_close_connection_calls_disconnect():
     with patch("user.gui.tk.Tk.__init__", return_value=None):
@@ -276,6 +286,7 @@ def test_dashboard_check_queue_drains_messages():
 
 
 # --- robot/main.py mesh integration ---
+# (unchanged — these already passed)
 
 MOCK_CONFIG = {
     "robot_pub_port": 5001,
