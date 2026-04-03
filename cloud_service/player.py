@@ -1,5 +1,6 @@
 import csv
 import os
+import random
 
 import zmq
 import json
@@ -41,7 +42,7 @@ def run_player(robot_id: str, player_port: int, robot_port: int, user_port: int,
     print(f"[Cloud Player {robot_id}] Publishing on port {player_port}")
     print(f"[Cloud Player {robot_id}] Subscribed to ports {robot_port} (Robot) and {user_port} (User)\n")
 
-    log_dir = os.path.join("logs", "player_logs", f"{robot_id}-player-1")
+    log_dir = os.path.join("logs", "player_logs", f"{robot_id}-player-{random.randint(1, 10000)}")
     os.makedirs(log_dir, exist_ok=True)
     log_file = os.path.join(log_dir, "robot_input.csv")
 
