@@ -4,7 +4,7 @@
 Real-time data channel between three simulated entities:
 1. **Robot** (edge device)
 2. **Cloud Service**
-3. **User**.
+3. **User**
 
 Once connected, they establish a decentralized, peer-to-peer network mesh allowing direct publish/subscribe communication between all three parties, with end-to-end encrypted payloads.
 
@@ -14,7 +14,8 @@ The system is separated into two distinct layers to ensure scalability and a cle
 **1. The Control Plane (Discovery & Matchmaking)**
 - Running on a **FastAPI** HTTP server
 - Handles robot registration, heartbeat monitoring, and connection orchestration
-- When a user connects, the server generates a per-session encryption key, dynamically allocates ports, spawns a Cloud Player process, and returns the full mesh configuration to all entities
+- When a user connects, the server generates a per-session encryption key, spawns a Cloud Player process, and returns the full mesh configuration to all entities
+- **Design Decision:** Ports are owned by the nodes that bind them. The Robot allocates its own pub port at boot and registers it with the cloud. The User allocates its own pub port before connecting. The Cloud only allocates the Player port, which it owns. This avoids the cloud guessing ports on remote machines.
 
 **2. The Data Plane (P2P Pub/Sub Mesh)**
 - Powered by **ZeroMQ (pyzmq)**
@@ -24,11 +25,11 @@ The system is separated into two distinct layers to ensure scalability and a cle
 
 ```text
     Player (Cloud)
-    /   \
-   /     \
-  /       \
- /         \
-Robot ──── User
+    /    \
+   /      \
+  /        \
+ /          \
+Robot ────- User
 ```
 
 ## Repository Structure
@@ -37,6 +38,10 @@ repo/
 ├── cloud_service/      # FastAPI orchestrator and Player background process
 ├── robot/              # Robot simulator, mesh node, and mocked hardware SDK
 ├── user/               # GUI dashboard client and mesh node
+├── common/             # Shared utilities used across all three nodes
+│   ├── config.py       # CLOUD_HOST, CLOUD_PORT, CLOUD_URL (env-configurable)
+│   ├── security.py     # MeshCipher (encrypt/decrypt) + generate_session_key
+│   └── get_ports.py    # get_free_port() — dynamic port allocation
 ├── tests/              # Full pytest test suite
 ├── run.py              # Unified entry point to launch all components
 ├── requirements.txt    # Python dependencies
@@ -71,6 +76,8 @@ This opens separate terminal windows for:
 - User Service
 - Cloud Player (spawned automatically when the User connects)
 
+> **Note:** No port configuration is needed. Each node auto-allocates its own ports at startup.
+
 ### 3. Manual Startup (Alternative)
 Open four separate terminals, all with `.venv` activated:
 
@@ -78,24 +85,32 @@ Open four separate terminals, all with `.venv` activated:
 # Terminal 1 — Cloud Service
 uvicorn cloud_service.main:app --host 0.0.0.0 --port 8000
 
-# Terminal 2 — Robot
+# Terminal 2 — Robot (auto-allocates its pub port)
 python3 -m robot.main
 
-# Terminal 3 — User
+# Terminal 3 — User (auto-allocates its pub port)
 python3 -m user.main
 
 # Terminal 4 — Cloud Player (auto-spawned, but can be run manually)
 python3 -m cloud_service.player <robot_id> <player_port> <robot_port> <user_port> <session_key>
 ```
 
-### 4. Using the Dashboard
+### 4. Environment Variables (Optional)
+By default, all components point to `localhost:8000`. Override for multi-machine setups:
+
+```bash
+export CLOUD_HOST=192.168.1.5
+export CLOUD_PORT=8000
+```
+
+### 5. Using the Dashboard
 1. The User GUI will list all active robots
 2. Select a robot number to connect
 3. The Cloud Player spawns automatically in a new terminal
 4. Use the directional buttons to send commands — telemetry streams live into the log window
 5. Click **Close Connection** to gracefully tear down the mesh
 
-### 5. Run Tests
+### 6. Run Tests
 ```bash
 pytest tests/ -v
 ```
@@ -110,10 +125,16 @@ pytest tests/ -v
 
 ## Assumptions & Design Decisions
 
+### Port Ownership
+- **Design Decision:** Each node allocates its own pub port at startup using `get_free_port()` from `common/get_ports.py`. The Robot sends its port during registration; the User sends its port at connect time. The Cloud only allocates the Player port, which it owns. This ensures ports are always reachable on the machine that binds them.
+
 ### Security & Encryption
 - **Assumption:** In production, FastAPI endpoints would be secured via HTTPS/mTLS, protecting the session key in transit
-- **Enhancement:** All ZMQ payloads are encrypted with a per-session **Fernet (AES-128)** key, protecting the data plane
+- **Enhancement:** All ZMQ payloads are encrypted with a per-session **Fernet (AES-128)** key via `MeshCipher` in `common/security.py`, protecting the data plane
 - **Assumption:** CurveZMQ was intentionally avoided to keep dependencies minimal and the project easy to run
+
+### Shared `common/` Module
+- **Design Decision:** Encryption logic (`MeshCipher`), port allocation (`get_free_port`), and cloud URL config (`CLOUD_URL`) were extracted into a shared `common/` package to eliminate duplication across the three nodes and provide a single place to modify cross-cutting concerns
 
 ### Telemetry & Sensor Data
 - **Enhancement:** The spec requires `{ "state": 25.5 }`. We match the `state` key but use a 2D coordinate array `[x, y]` that actively updates with each directional command, making the simulation more realistic for a mobile robot
@@ -133,11 +154,12 @@ pytest tests/ -v
 - **Enhancement:** Append-only **CSV logs** are written to `logs/robot_logs/` and `logs/player_logs/` for post-session analysis
 
 ## Testing
-Tests were generated with AI assistance and, they cover:
+Tests were generated with AI assistance and cover:
 - All ZMQ mesh node behavior (robot and user)
 - Command routing to the FakeJetbot hardware
-- Encryption/decryption flow
+- Encryption/decryption via `MeshCipher` (cipher mocking, not raw Fernet)
 - GUI queue and message rendering
 - Cloud Service endpoints (register, heartbeat, connect, disconnect)
 - Duplicate and stale robot registration
 - Graceful disconnect and reconnection
+- Port ownership — robot and user ports passed in request bodies
